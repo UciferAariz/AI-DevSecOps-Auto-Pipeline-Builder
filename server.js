@@ -96,15 +96,15 @@ app.get('/api/jobs/:jobId', (req, res) => {
 });
 
 app.get('/api/jobs/:jobId/report', (req, res) => {
-  // Try file first; fall back to DB-stored JSON (survives server restarts)
-  const reportPath = path.join(process.cwd(), 'reports', req.params.jobId, 'security-report.json');
-  if (fs.existsSync(reportPath)) {
-    res.sendFile(reportPath);
-    return;
-  }
+  // Prefer the DB copy — it works regardless of file paths or dotfile restrictions
   const report = getJobReport(req.params.jobId);
   if (report) {
     res.json(report);
+    return;
+  }
+  const reportPath = path.join(process.cwd(), 'reports', req.params.jobId, 'security-report.json');
+  if (fs.existsSync(reportPath)) {
+    res.type('application/json').send(fs.readFileSync(reportPath, 'utf8'));
     return;
   }
   res.status(404).json({ error: 'Report is not ready.' });
@@ -113,10 +113,16 @@ app.get('/api/jobs/:jobId/report', (req, res) => {
 app.get('/api/jobs/:jobId/files', (req, res) => {
   const manifestPath = path.join(process.cwd(), 'generated', req.params.jobId, 'generated-files.json');
   if (!fs.existsSync(manifestPath)) {
+    // Fall back to the generatedFiles array from the DB-stored report
+    const report = getJobReport(req.params.jobId);
+    if (report?.generatedFiles) {
+      res.json(report.generatedFiles);
+      return;
+    }
     res.status(404).json({ error: 'Generated files are not ready.' });
     return;
   }
-  res.sendFile(manifestPath);
+  res.type('application/json').send(fs.readFileSync(manifestPath, 'utf8'));
 });
 
 app.get(/^\/api\/jobs\/([^/]+)\/files\/(.+)$/, (req, res) => {
