@@ -4,7 +4,7 @@ import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initDb, createJob, getJob, listJobs, setJobStatus } from './server/db.js';
+import { initDb, createJob, getJob, getJobReport, listJobs, setJobStatus } from './server/db.js';
 import { ensureRuntimeDirs, safeGeneratedPath, zipDirectory } from './server/utils.js';
 import { runJob } from './server/worker.js';
 
@@ -96,12 +96,18 @@ app.get('/api/jobs/:jobId', (req, res) => {
 });
 
 app.get('/api/jobs/:jobId/report', (req, res) => {
+  // Try file first; fall back to DB-stored JSON (survives server restarts)
   const reportPath = path.join(process.cwd(), 'reports', req.params.jobId, 'security-report.json');
-  if (!fs.existsSync(reportPath)) {
-    res.status(404).json({ error: 'Report is not ready.' });
+  if (fs.existsSync(reportPath)) {
+    res.sendFile(reportPath);
     return;
   }
-  res.sendFile(reportPath);
+  const report = getJobReport(req.params.jobId);
+  if (report) {
+    res.json(report);
+    return;
+  }
+  res.status(404).json({ error: 'Report is not ready.' });
 });
 
 app.get('/api/jobs/:jobId/files', (req, res) => {

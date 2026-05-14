@@ -19,15 +19,17 @@ export function initDb() {
       step TEXT,
       progress INTEGER DEFAULT 0,
       score INTEGER,
+      report_json TEXT,
       error TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
-  // Migrate existing databases that predate step/progress/score columns
-  try { db.exec('ALTER TABLE jobs ADD COLUMN step TEXT'); } catch { /* column exists */ }
-  try { db.exec('ALTER TABLE jobs ADD COLUMN progress INTEGER DEFAULT 0'); } catch { /* column exists */ }
-  try { db.exec('ALTER TABLE jobs ADD COLUMN score INTEGER'); } catch { /* column exists */ }
+  // Migrate existing databases
+  try { db.exec('ALTER TABLE jobs ADD COLUMN step TEXT'); } catch { /* exists */ }
+  try { db.exec('ALTER TABLE jobs ADD COLUMN progress INTEGER DEFAULT 0'); } catch { /* exists */ }
+  try { db.exec('ALTER TABLE jobs ADD COLUMN score INTEGER'); } catch { /* exists */ }
+  try { db.exec('ALTER TABLE jobs ADD COLUMN report_json TEXT'); } catch { /* exists */ }
 }
 
 export function createJob({ repoUrl, uploadPath, uploadName }) {
@@ -59,6 +61,12 @@ export function getJob(id) {
   `).get(id);
 }
 
+export function getJobReport(id) {
+  const row = db.prepare(`SELECT report_json FROM jobs WHERE id = ?`).get(id);
+  if (!row?.report_json) return null;
+  try { return JSON.parse(row.report_json); } catch { return null; }
+}
+
 export function listJobs() {
   return db.prepare(`
     SELECT
@@ -80,24 +88,24 @@ export function listJobs() {
 
 export function setJobStatus(id, status, error = null) {
   db.prepare(`
-    UPDATE jobs
-    SET status = ?, error = ?, updated_at = ?
-    WHERE id = ?
+    UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?
   `).run(status, error, new Date().toISOString(), id);
 }
 
 export function setJobProgress(id, step, progress) {
   db.prepare(`
-    UPDATE jobs
-    SET step = ?, progress = ?, updated_at = ?
-    WHERE id = ?
+    UPDATE jobs SET step = ?, progress = ?, updated_at = ? WHERE id = ?
   `).run(step, progress, new Date().toISOString(), id);
 }
 
 export function setJobScore(id, score) {
   db.prepare(`
-    UPDATE jobs
-    SET score = ?, updated_at = ?
-    WHERE id = ?
+    UPDATE jobs SET score = ?, updated_at = ? WHERE id = ?
   `).run(score, new Date().toISOString(), id);
+}
+
+export function setJobReport(id, reportObject) {
+  db.prepare(`
+    UPDATE jobs SET report_json = ?, updated_at = ? WHERE id = ?
+  `).run(JSON.stringify(reportObject), new Date().toISOString(), id);
 }

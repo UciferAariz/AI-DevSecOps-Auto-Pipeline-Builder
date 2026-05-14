@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getJob, setJobStatus, setJobProgress, setJobScore } from './db.js';
+import { getJob, setJobStatus, setJobProgress, setJobScore, setJobReport } from './db.js';
 import { calculateScore, summarizeFindings, buildMarkdownReport } from './report.js';
 import { analyzeDependencies, detectProject, runTrivy } from './scanners.js';
 import { generateDevSecOpsFiles } from './generators.js';
@@ -75,6 +75,8 @@ export async function runJob(jobId) {
   });
 
   setJobProgress(jobId, 'finalizing', 96);
+  // Persist report to DB so it survives server restarts regardless of file system state
+  setJobReport(jobId, baseReport);
   fs.writeFileSync(path.join(reportDir, 'security-report.json'), JSON.stringify(baseReport, null, 2));
   fs.writeFileSync(path.join(reportDir, 'security-report.md'), buildMarkdownReport(baseReport));
   fs.copyFileSync(path.join(reportDir, 'security-report.json'), path.join(process.cwd(), 'generated', jobId, 'security-report.json'));
