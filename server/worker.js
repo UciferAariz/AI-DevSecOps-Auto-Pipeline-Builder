@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getJob, setJobStatus } from './db.js';
+import { getJob, setJobStatus, setJobProgress, setJobScore } from './db.js';
 import { calculateScore, summarizeFindings, buildMarkdownReport } from './report.js';
 import { analyzeDependencies, detectProject, runTrivy } from './scanners.js';
 import { generateDevSecOpsFiles } from './generators.js';
@@ -11,6 +11,7 @@ export async function runJob(jobId) {
   const job = getJob(jobId);
   if (!job) throw new Error(`Job not found: ${jobId}`);
   setJobStatus(jobId, 'running');
+  setJobProgress(jobId, 'downloading', 5);
 
   const workspaceDir = path.join(process.cwd(), 'workspaces', jobId);
   const archivePath = path.join(process.cwd(), 'uploads', `${jobId}.zip`);
@@ -26,17 +27,27 @@ export async function runJob(jobId) {
     } catch {
       await downloadFile(github.fallbackUrl, archivePath);
     }
+    setJobProgress(jobId, 'extracting', 18);
     extractZipSafely(archivePath, workspaceDir);
   } else {
+    setJobProgress(jobId, 'extracting', 18);
     extractZipSafely(job.uploadPath, workspaceDir);
   }
 
+  setJobProgress(jobId, 'detecting', 30);
   const repoRoot = findRepoRoot(workspaceDir);
   const detection = detectProject(repoRoot);
   const dependencies = analyzeDependencies(repoRoot, detection.manifests);
+
+  setJobProgress(jobId, 'scanning', 45);
   const findings = await runTrivy(repoRoot);
+
+  setJobProgress(jobId, 'scoring', 62);
   const context = { ...detection, repoName };
   const score = calculateScore(findings, context);
+  setJobScore(jobId, score);
+
+  setJobProgress(jobId, 'generating', 72);
   const generatedFiles = generateDevSecOpsFiles(jobId, context);
   const reportFileEntries = [
     { path: 'security-report.md', description: 'Markdown report for executive and engineering review.' },
@@ -57,11 +68,13 @@ export async function runJob(jobId) {
     aiSuggestions: []
   };
 
+  setJobProgress(jobId, 'ai_suggestions', 85);
   baseReport.aiSuggestions = await generateAiSuggestions({
     ...baseReport,
     manifestSnippets: readManifestSnippets(repoRoot, detection.manifests)
   });
 
+  setJobProgress(jobId, 'finalizing', 96);
   fs.writeFileSync(path.join(reportDir, 'security-report.json'), JSON.stringify(baseReport, null, 2));
   fs.writeFileSync(path.join(reportDir, 'security-report.md'), buildMarkdownReport(baseReport));
   fs.copyFileSync(path.join(reportDir, 'security-report.json'), path.join(process.cwd(), 'generated', jobId, 'security-report.json'));
@@ -71,6 +84,7 @@ export async function runJob(jobId) {
     JSON.stringify(baseReport.generatedFiles, null, 2)
   );
 
+  setJobProgress(jobId, 'completed', 100);
   setJobStatus(jobId, 'completed');
 }
 

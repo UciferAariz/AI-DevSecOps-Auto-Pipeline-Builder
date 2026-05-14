@@ -12,8 +12,37 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 50);
 
+// Warn about missing optional configuration at startup
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('[warn] OPENAI_API_KEY is not set — AI patch suggestions will use deterministic fallbacks instead of GPT.');
+}
+if (process.env.NODE_ENV === 'production' && !process.env.APP_ORIGIN) {
+  console.warn('[warn] APP_ORIGIN is not set in production — CORS will allow all origins.');
+}
+
 ensureRuntimeDirs();
 initDb();
+
+// Simple in-memory rate limiter (no external dep required)
+const rateLimitStore = new Map();
+function rateLimit(maxRequests, windowMs) {
+  return (req, res, next) => {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitStore.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > entry.resetAt) {
+      entry.count = 0;
+      entry.resetAt = now + windowMs;
+    }
+    entry.count++;
+    rateLimitStore.set(key, entry);
+    if (entry.count > maxRequests) {
+      res.status(429).json({ error: 'Too many requests. Please wait a moment before retrying.' });
+      return;
+    }
+    next();
+  };
+}
 
 const app = express();
 const upload = multer({
@@ -33,12 +62,19 @@ app.get('/api/jobs', (req, res) => {
   res.json({ jobs: listJobs() });
 });
 
-app.post('/api/repos/analyze', upload.single('zipFile'), async (req, res) => {
+// Rate-limit analysis endpoint: 10 requests per 60 seconds per IP
+app.post('/api/repos/analyze', rateLimit(10, 60_000), upload.single('zipFile'), async (req, res) => {
   const repoUrl = typeof req.body.repoUrl === 'string' ? req.body.repoUrl.trim() : '';
   const zipPath = req.file?.path;
 
   if (!repoUrl && !zipPath) {
     res.status(400).json({ error: 'Provide a public GitHub repo URL or ZIP file.' });
+    return;
+  }
+
+  // Basic GitHub URL validation when a URL is provided
+  if (repoUrl && !/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/.test(repoUrl)) {
+    res.status(400).json({ error: 'Please provide a valid public GitHub repository URL (e.g. https://github.com/owner/repo).' });
     return;
   }
 
