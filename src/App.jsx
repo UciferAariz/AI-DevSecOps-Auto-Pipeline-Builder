@@ -220,22 +220,34 @@ export default function App() {
   useEffect(() => {
     if (!activeJobId) return;
     setPollingError('');
+    let settled = false; // stop retrying once report is loaded or permanently unavailable
     const load = async () => {
       const job = await fetchJson(`/api/jobs/${activeJobId}`);
       setActiveJob(job);
-      if (job.status === 'completed') {
-        const [rep, fls] = await Promise.all([
-          fetchJson(`/api/jobs/${activeJobId}/report`),
-          fetchJson(`/api/jobs/${activeJobId}/files`),
-        ]);
-        setReport(rep);
-        setFiles(fls);
-        setShowAllFindings(false);
-        setSeverityFilter('all');
+      if (job.status === 'completed' && !settled) {
+        try {
+          const [rep, fls] = await Promise.all([
+            fetchJson(`/api/jobs/${activeJobId}/report`),
+            fetchJson(`/api/jobs/${activeJobId}/files`),
+          ]);
+          setReport(rep);
+          setFiles(fls);
+          setShowAllFindings(false);
+          setSeverityFilter('all');
+          settled = true;
+        } catch {
+          // Report files may not exist (server restarted / files cleared).
+          // Show a soft notice rather than a red error banner.
+          setPollingError('report-missing');
+          settled = true;
+        }
       }
+      if (job.status === 'failed') settled = true;
     };
     load().catch((err) => setPollingError(err.message));
-    const timer = setInterval(() => load().catch((err) => setPollingError(err.message)), 2500);
+    const timer = setInterval(() => {
+      if (!settled) load().catch((err) => setPollingError(err.message));
+    }, 2500);
     return () => clearInterval(timer);
   }, [activeJobId]);
 
@@ -245,7 +257,7 @@ export default function App() {
     fetch(`/api/jobs/${activeJobId}/files/${encodeURIComponent(selectedFile.path)}`)
       .then((r) => r.text())
       .then(setFileContent)
-      .catch((err) => setError(err.message));
+      .catch(() => setFileContent('// File content unavailable.'));
   }, [activeJobId, selectedFile]);
 
   const severityRows = useMemo(() => {
@@ -420,11 +432,16 @@ export default function App() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <section className="content">
             {/* Polling error (report/files fetch failures) */}
-            {pollingError && (
+            {pollingError === 'report-missing' ? (
+              <div className="banner banner-warn">
+                <strong>Report files not found</strong> — this scan's data was cleared when the server restarted.
+                Run a new scan to generate fresh results.
+              </div>
+            ) : pollingError ? (
               <div className="banner banner-error">
                 <strong>Failed to load results</strong> — {pollingError}
               </div>
-            )}
+            ) : null}
 
             {/* Trivy warning */}
             {trivyMissing && (
