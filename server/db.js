@@ -109,3 +109,8 @@ export function setJobReport(id, reportObject) {
     UPDATE jobs SET report_json = ?, updated_at = ? WHERE id = ?
   `).run(JSON.stringify(reportObject), new Date().toISOString(), id);
 }
+
+export function deleteJob(id) {
+  const result = db.prepare(`DELETE FROM jobs WHERE id = ?`).run(id);
+  return result.changes > 0;
+}

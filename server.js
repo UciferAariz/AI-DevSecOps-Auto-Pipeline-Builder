@@ -4,7 +4,7 @@ import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initDb, createJob, getJob, getJobReport, listJobs, setJobStatus } from './server/db.js';
+import { initDb, createJob, deleteJob, getJob, getJobReport, listJobs, setJobStatus } from './server/db.js';
 import { ensureRuntimeDirs, safeGeneratedPath, zipDirectory } from './server/utils.js';
 import { runJob } from './server/worker.js';
 
@@ -135,6 +135,20 @@ app.get(/^\/api\/jobs\/([^/]+)\/files\/(.+)$/, (req, res) => {
     return;
   }
   res.type('text/plain').send(fs.readFileSync(resolved, 'utf8'));
+});
+
+app.delete('/api/jobs/:jobId', (req, res) => {
+  const jobId = req.params.jobId;
+  const removed = deleteJob(jobId);
+  if (!removed) {
+    res.status(404).json({ error: 'Job not found.' });
+    return;
+  }
+  for (const dir of ['reports', 'generated', 'workspaces']) {
+    const target = path.join(process.cwd(), dir, jobId);
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+  res.json({ ok: true });
 });
 
 app.get('/api/jobs/:jobId/download', (req, res) => {

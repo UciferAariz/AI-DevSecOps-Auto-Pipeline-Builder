@@ -300,6 +300,33 @@ button[type="submit"]:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .job-download-link:hover { text-decoration: underline; }
 
+.job { position: relative; }
+.job-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.job:hover .job-delete,
+.job:focus-within .job-delete { opacity: 1; }
+.job-delete:hover {
+  background: color-mix(in srgb, var(--error-color) 15%, transparent);
+  color: var(--error-color);
+}
+
 .file span { color: var(--text-sub); font-size: 13px; }
 
 /* ─── Banners ─────────────────────────────────────────────────────────────── */

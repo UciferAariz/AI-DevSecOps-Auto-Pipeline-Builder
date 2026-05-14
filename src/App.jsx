@@ -337,6 +337,26 @@ export default function App() {
     }
   }
 
+  async function handleDeleteJob(jobId) {
+    if (!confirm('Delete this scan and its generated files? This cannot be undone.')) return;
+    try {
+      const response = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete scan.');
+      if (jobId === activeJobId) {
+        setActiveJobId(null);
+        setActiveJob(null);
+        setReport(null);
+        setFiles([]);
+        setSelectedFile(null);
+        setFileContent('');
+        setPollingError('');
+      }
+      await loadJobs();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  }
+
   const hasActiveResult = report || (activeJob && activeJob.status === 'running');
 
   return (
@@ -397,11 +417,20 @@ export default function App() {
             <section className="panel jobs">
               <h2>Recent scans</h2>
               {jobs.length ? jobs.map((job) => (
-                <button
+                <div
                   className={`job${job.id === activeJobId ? ' active' : ''}`}
                   key={job.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => { setActiveJobId(job.id); setReport(null); setFiles([]); setSelectedFile(null); setFileContent(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveJobId(job.id); setReport(null); setFiles([]); setSelectedFile(null); setFileContent(''); } }}
                 >
+                  <button
+                    className="job-delete"
+                    aria-label="Delete this scan"
+                    title="Delete this scan"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteJob(job.id); }}
+                  >×</button>
                   <span className="job-name">{jobDisplayName(job)}</span>
                   <div className="job-meta">
                     <strong className={`job-status status-${job.status}`}>{job.status}</strong>
@@ -424,7 +453,7 @@ export default function App() {
                       ↓ Download
                     </a>
                   )}
-                </button>
+                </div>
               )) : <p className="muted">No scans yet.</p>}
             </section>
           </aside>
