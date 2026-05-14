@@ -67,13 +67,27 @@ export function analyzeDependencies(root, manifests) {
   return dependencies;
 }
 
+// Resolve the real trivy executable, handling Windows .exe / .cmd / .bat extensions
+// (Node's child_process does not consult PATHEXT the way PowerShell does)
+function resolveTrivyBinary() {
+  const isWin = process.platform === 'win32';
+  const candidates = isWin ? ['trivy.exe', 'trivy.cmd', 'trivy.bat', 'trivy'] : ['trivy'];
+  const pathDirs = (process.env.PATH || process.env.Path || '').split(path.delimiter);
+  for (const name of candidates) {
+    for (const dir of pathDirs) {
+      if (!dir) continue;
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch { /* not here */ }
+    }
+  }
+  return null;
+}
+
 export async function runTrivy(root) {
-  try {
-    const { stdout } = await execFileAsync('trivy', ['fs', '--scanners', 'vuln,secret,misconfig', '--format', 'json', '--quiet', root], {
-      maxBuffer: 25 * 1024 * 1024
-    });
-    return normalizeTrivy(JSON.parse(stdout || '{}'));
-  } catch (error) {
+  const trivyBin = resolveTrivyBinary();
+  if (!trivyBin) {
     return [{
       severity: 'unknown',
       title: 'Trivy scan unavailable',
@@ -84,7 +98,26 @@ export async function runTrivy(root) {
       cveId: null,
       source: 'trivy',
       remediation: 'Install Trivy and ensure it is available on PATH to enable full vulnerability, secret, and IaC scans.',
-      toolError: error.code === 'ENOENT' ? 'trivy-not-installed' : error.message
+      toolError: 'trivy-not-installed'
+    }];
+  }
+  try {
+    const { stdout } = await execFileAsync(trivyBin, ['fs', '--scanners', 'vuln,secret,misconfig', '--format', 'json', '--quiet', root], {
+      maxBuffer: 25 * 1024 * 1024
+    });
+    return normalizeTrivy(JSON.parse(stdout || '{}'));
+  } catch (error) {
+    return [{
+      severity: 'unknown',
+      title: 'Trivy scan failed',
+      file: 'local environment',
+      packageName: null,
+      installedVersion: null,
+      fixedVersion: null,
+      cveId: null,
+      source: 'trivy',
+      remediation: 'The Trivy binary was found but the scan errored. Check the server logs for details.',
+      toolError: error.message
     }];
   }
 }
