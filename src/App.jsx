@@ -194,7 +194,8 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');   // only shown under the form
+  const [pollingError, setPollingError] = useState(''); // shown in main content
   const [severityFilter, setSeverityFilter] = useState('all');
   const [sortBy, setSortBy] = useState('severity');
   const [sortDir, setSortDir] = useState('asc');
@@ -218,6 +219,7 @@ export default function App() {
   // Poll active job every 2.5 s
   useEffect(() => {
     if (!activeJobId) return;
+    setPollingError('');
     const load = async () => {
       const job = await fetchJson(`/api/jobs/${activeJobId}`);
       setActiveJob(job);
@@ -232,8 +234,8 @@ export default function App() {
         setSeverityFilter('all');
       }
     };
-    load().catch((err) => setError(err.message));
-    const timer = setInterval(() => load().catch((err) => setError(err.message)), 2500);
+    load().catch((err) => setPollingError(err.message));
+    const timer = setInterval(() => load().catch((err) => setPollingError(err.message)), 2500);
     return () => clearInterval(timer);
   }, [activeJobId]);
 
@@ -277,7 +279,8 @@ export default function App() {
   async function submitAnalysis(event) {
     event.preventDefault();
     setBusy(true);
-    setError('');
+    setFormError('');
+    setPollingError('');
     setReport(null);
     setFiles([]);
     setSelectedFile(null);
@@ -289,12 +292,16 @@ export default function App() {
       if (repoUrl.trim()) form.append('repoUrl', repoUrl.trim());
       if (zipFile) form.append('zipFile', zipFile);
       const response = await fetch('/api/repos/analyze', { method: 'POST', body: form });
+      if (!response.ok) {
+        let msg = 'Unable to start analysis.';
+        try { msg = (await response.json()).error || msg; } catch { /* non-JSON error page */ }
+        throw new Error(msg);
+      }
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to start analysis.');
       setActiveJobId(data.jobId);
       await loadJobs();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
     } finally {
       setBusy(false);
     }
@@ -372,7 +379,7 @@ export default function App() {
               <button type="submit" disabled={busy || (!repoUrl.trim() && !zipFile)}>
                 {busy ? 'Starting…' : 'Run security pipeline'}
               </button>
-              {error ? <p className="error">{error}</p> : null}
+              {formError ? <p className="error">{formError}</p> : null}
             </form>
 
             <section className="panel jobs">
@@ -412,6 +419,13 @@ export default function App() {
 
           {/* ── Main content ──────────────────────────────────────────── */}
           <section className="content">
+            {/* Polling error (report/files fetch failures) */}
+            {pollingError && (
+              <div className="banner banner-error">
+                <strong>Failed to load results</strong> — {pollingError}
+              </div>
+            )}
+
             {/* Trivy warning */}
             {trivyMissing && (
               <div className="banner banner-warn">
@@ -446,7 +460,7 @@ export default function App() {
               <section className="status-grid">
                 <div className="metric score-metric">
                   <span>Security score</span>
-                  <ScoreGauge score={report?.score ?? null} />
+                  <ScoreGauge score={report?.score ?? activeJob?.score ?? null} />
                   <small>{activeJob?.status === 'running' ? 'Scanning…' : activeJob?.status || 'waiting'}</small>
                 </div>
                 {severityRows.map(([name, count]) => (

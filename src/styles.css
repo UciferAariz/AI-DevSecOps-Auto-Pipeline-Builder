@@ -314,6 +314,11 @@ button[type="submit"]:disabled { cursor: not-allowed; opacity: 0.55; }
   border-color: var(--warn-border);
   color: var(--warn-text);
 }
+.banner-error {
+  background: color-mix(in srgb, #b42318 8%, var(--surface));
+  border-color: #b42318;
+  color: var(--error-color);
+}
 
 /* ─── Empty state ─────────────────────────────────────────────────────────── */
 .empty-state {
